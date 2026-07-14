@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+.claude/
+data/
+runs/
+results/
+*.log
+scratchpad/

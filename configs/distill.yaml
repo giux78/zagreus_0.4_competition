@@ -1,0 +1,39 @@
+# On-policy distillation: nesso-0.4B-agentic <- Coloss/nesso-3B, ITALIC-format QA
+student: mii-llm/nesso-0.4B-agentic
+teacher: Coloss/nesso-3B
+prompts_path: data/prompts.jsonl
+italic_shots_path: data/5_shots.jsonl
+out_dir: runs/opd
+
+# batch / sampling
+batch_prompts: 32
+group_size: 1          # fast-mode completions are ~1 token; groups add nothing
+temperature: 1.0
+max_new_tokens: 16
+cot_fraction: 0.0      # raise (e.g. 0.3) to also distill the CoT template; then
+cot_max_new_tokens: 300  # consider group_size 2-4 and a smaller batch_prompts
+p_italic_shots: 0.5
+p_pool_shots: 0.25
+
+# optimization
+steps: 2000
+lr: 1.0e-5
+warmup_steps: 50
+lr_schedule: cosine
+grad_clip: 1.0
+loss_fn: full_kl       # or sampled_rkl (tinker-style REINFORCE on sampled tokens)
+seed: 0
+
+# memory (tune to GPU; these fit a 40GB A100 with headroom)
+gen_micro_seqs: 64
+score_micro_seqs: 32
+gradient_checkpointing: false
+# teacher_device: "cuda:1"   # uncomment on a multi-GPU node
+
+# bookkeeping
+dev_size: 500
+eval_every: 200
+eval_dev_samples: 200
+save_every: 500
+log_every: 10
+# wandb_project: zagreus-opd
