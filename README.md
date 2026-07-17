@@ -6,22 +6,36 @@ distillation from **Coloss/nesso-3B**, following the logic of
 [tinker-cookbook's on_policy_distillation](https://github.com/thinking-machines-lab/tinker-cookbook/blob/main/tinker_cookbook/recipes/distillation/on_policy_distillation.py)
 but fully self-contained (PyTorch + transformers, no Tinker API).
 
+The `opd/` package in this repo was the v1 prototype; from v2 on, the
+library code lives in **[mii-llm/palingenesis](https://github.com/mii-llm/palingenesis)**
+(branch `odp`, `pgs distill` / `pgs distill-score`) and this repo is the
+experiment record: data policy scripts, eval harnesses, analyses, results.
+
+**Best model released: [giux78/zagreus_0.4_competition](https://huggingface.co/giux78/zagreus_0.4_competition)**
+(= `opd_v3/step_550` below).
+
 ## TL;DR results
 
-Full 10,000-question ITALIC, 5-shot, `fast` protocol (direct letter answer):
+Full 10,000-question ITALIC, 5-shot. `fast` = direct letter answer (the
+protocol that matters); slow = CoT. Two cross-validated harnesses: *informal* =
+`scripts/eval_italic_fast.py` (verbatim templates, 8-token cap); *official* =
+`Crisp-Unimib/ITALIC run_eval.py` via vLLM.
 
-| Model | Accuracy (fast) | Accuracy (slow / CoT) |
-|---|---:|---:|
-| `nesso-0.4B-agentic` (baseline student) | 32.9% | 0.0%\* |
-| **`opd-v1/step_250` (distilled, this repo)** | **34.6%** | 30.5% |
-| `nesso-3B` (teacher, the ceiling) | 50.7% | 2.5%\* |
+| Model | fast (informal) | fast (official) | slow (official) |
+|---|---:|---:|---:|
+| `nesso-0.4B-agentic` (baseline student) | 32.94 | 33.12 | 0.00\* |
+| `opd-v1/step_250` (v1 prototype, this repo) | 34.60 | 34.37 | 30.49 |
+| `opd_v2/step_250` (palingenesis, unfiltered pool) | 35.44 | — | — |
+| **`opd_v3/step_550` (palingenesis, filtered pool — released)** | **37.06** | **37.2** | **33.2** |
+| `nesso-3B` (teacher, the ceiling) | 50.71 | 50.69 | 2.51\* |
 
 \* The near-zero slow scores are a **scoring artifact**, not a reasoning
 collapse — see [Why CoT scores near-zero](#why-cot-scores-near-zero).
 
-**Net effect of distillation: +1.7 points on full-10k fast** (32.9 → 34.6),
-saturating by ~250 steps. Random chance is ~25% (mostly 4-option). The teacher
-sits at 50.7%, so ~16 points of headroom remain for a stronger recipe.
+**Net effect: +4.1 points official fast** (33.12 → 37.2). Random chance is
+~25% (mostly 4-option). The teacher sits at 50.7%, so ~13.5 points of headroom
+remain. Per-domain (v3, informal): culture & commonsense 39.7, language
+capability 33.1.
 
 ## Method
 
@@ -95,6 +109,40 @@ noise of step_250. The gain **saturates by step 250**; the extra 750 steps keep
 lowering KL without adding accuracy. The bottleneck is capacity /
 knowledge-transfer into a 0.4B model, not training length.
 
+### Training run `opd_v2` (palingenesis, fast-only)
+
+Same recipe re-run through `palingenesis.opd` (`pgs distill`) with one change:
+`cot_fraction 0` — all supervision in the fast format. 600 steps, batch 32,
+~50 min on one A100 (needs `score_micro_seqs 8` + `gradient_checkpointing`,
+otherwise the student scoring forward OOMs the 80GB card). Full-10k fast:
+step_250 **35.44**, step_500 35.38 (tied). +0.8 over v1 purely from not
+splitting capacity with CoT.
+
+### Training run `opd_v3` (filtered pool — the released model)
+
+Four combined changes over v2, all data-side:
+
+1. **Teacher-correct filtering** (`pgs distill-score` + `scripts/build_pool_v3.py`):
+   pure reverse KL distills the teacher's *errors* too — and nesso-3B is right
+   on only **43.7%** of the pool (pinocchio 48.1, mmlu_italian 40.2,
+   mmlu_pro_ita 16.2 — 10-option questions). Scoring is one batched forward
+   per row (option-letter logits at the last prompt position, no generation);
+   the filtered pool keeps 47,933 rows.
+2. **Italian-language upweight ×4**: ITALIC is 40% "language capability" but
+   the pool has only ~990 such rows pre-filter (570 post) — vocabulary, verbal
+   comprehension, grammar. Foreign-language quizzes are not upweighted.
+3. **`p_reference_shots 0.8`**: the official harness always sends the same 5
+   official shots, so train mostly on exactly that distribution.
+4. **`max_new_tokens 8` at train time**: terse supervision; kills the
+   verbosity drift v1/v2 showed (and with it the fast-mode misparse tax —
+   official fast now reads *at* the informal number, not below it).
+
+600 steps, ~40 min. Dev accuracy climbs monotonically (unlike v2's plateau)
+and was **still rising at the last evaluated checkpoint**: full-10k fast
+step_250 36.61 → step_350 36.75 → **step_550 37.06** (official: **fast 37.2,
+slow 33.2** — both official modes now parse cleanly). Released as
+[giux78/zagreus_0.4_competition](https://huggingface.co/giux78/zagreus_0.4_competition).
+
 ### Why CoT scores near-zero
 
 ITALIC's `slow` (CoT) protocol requires the answer phrased as `Risposta: X`.
@@ -137,31 +185,67 @@ Fresh full-10k fast scoring (friend's script, 8-tok cap, 0 unparsed) reproduces
 the official harness: baseline 32.94 (vs 33.12), opd250 34.60 (vs 34.37),
 teacher 50.71 (vs 50.69).
 
-## Usage (A100 box)
+## Reproducing the released model (opd_v3, via palingenesis)
 
 ```bash
+# this repo: data + eval scripts
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 huggingface-cli login   # needs access to Coloss/* and mii-llm/pinocchio-raw
 
-# 1. verify the tokenizer bridge assumptions (tokenizer files only)
-python scripts/check_compat.py --teacher giux78/nesso-3B
+# the library (branch odp)
+git clone -b odp https://github.com/mii-llm/palingenesis ../palingenesis
+export PYTHONPATH=../palingenesis/src
 
-# 2. build the prompt pool (one-time; streams pinocchio-raw, takes a while)
+# 1. build the raw prompt pool (one-time; streams pinocchio-raw, takes a while)
 python scripts/prepare_prompts.py --out data/prompts.jsonl
 
-# 3. train  (80GB A100: the flags below avoid a teacher+student OOM)
+# 2. annotate every row with the teacher's own answer (~2h on an A100)
+python -m palingenesis.opd.score_pool \
+  --config ../palingenesis/configs/distill_opd.yaml \
+  --out data/prompts_scored.jsonl \
+  --model.teacher giux78/nesso-3B --data.prompts_path data/prompts.jsonl \
+  --data.shots_path data/5_shots.jsonl
+
+# 3. policy: keep teacher-correct rows, upweight Italian-language x4
+python scripts/build_pool_v3.py --scored data/prompts_scored.jsonl --out data/prompts_v3.jsonl
+
+# 4. train (~40 min on one 80GB A100; memory flags are the config defaults)
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+python -m palingenesis.opd.trainer \
+  --config ../palingenesis/configs/distill_opd.yaml \
+  --model.teacher giux78/nesso-3B \
+  --data.prompts_path data/prompts_v3.jsonl --data.shots_path data/5_shots.jsonl \
+  --data.p_reference_shots 0.8 --data.p_pool_shots 0.1 \
+  --sampling.max_new_tokens 8 \
+  --train.output_dir runs/opd_v3 --train.steps 600 \
+  --train.eval_every 50 --train.save_steps 50 --train.keep_checkpoints 0
+
+# 5. evaluate all candidate checkpoints on the full 10k (fast protocol, no vLLM)
+python scripts/eval_italic_fast.py runs/opd_v3/step_250 runs/opd_v3/step_350 \
+  runs/opd_v3/step_550 --italic-dir ./ITALIC --max-new-tokens 8
+
+# 6. official/leaderboard numbers for the winner (needs vLLM): both modes
+bash scripts/eval_italic_full.sh runs/opd_v3/step_550 opd-v3-550
+```
+
+With a `pip install -e ../palingenesis` the `python -m palingenesis.opd.*`
+invocations become `pgs distill-score` / `pgs distill`.
+
+<details>
+<summary>v1 prototype reproduction (self-contained opd/ package)</summary>
+
+```bash
+python scripts/check_compat.py --teacher giux78/nesso-3B
+python scripts/prepare_prompts.py --out data/prompts.jsonl
 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
 python scripts/train.py --config configs/distill.yaml \
   teacher=giux78/nesso-3B prompts_path=data/prompts.jsonl out_dir=runs/opd-v1 \
   score_micro_seqs=8 gradient_checkpointing=true
-
-# 4. evaluate on the full 10k (fast protocol, no vLLM)
 python scripts/eval_italic_fast.py runs/opd-v1/step_250 --italic-dir ./ITALIC
-
-# 5. official/leaderboard numbers (needs vLLM): both modes
-bash scripts/eval_italic_full.sh runs/opd-v1/step_250 opd250
 ```
+
+</details>
 
 On **LUMI (ROCm)**: same code; install the ROCm torch build first
 (`pip install torch --index-url https://download.pytorch.org/whl/rocm6.2`)
@@ -170,13 +254,11 @@ and set `teacher_device` if you split models across GCDs.
 ## Layout
 
 ```
-opd/formatting.py     ITALIC prompt templates (exact) + shot-regime sampling
-opd/token_bridge.py   vocab-compat assertions + student<->teacher id bridging
-opd/data.py           source normalizers, ITALIC dedup, pool load/split
-opd/trainer.py        the on-policy distillation loop
-scripts/check_compat.py       exhaustive tokenizer-compat check
-scripts/prepare_prompts.py    build/dedup the prompt pool
-scripts/train.py              training entrypoint
+opd/*                 v1 prototype (superseded by palingenesis.opd, kept for the record)
+scripts/check_compat.py       exhaustive tokenizer-compat check (v1)
+scripts/prepare_prompts.py    build/dedup the raw prompt pool
+scripts/build_pool_v3.py      policy: teacher-correct filter + language upweight (v3)
+scripts/train.py              v1 training entrypoint (v2/v3 train via palingenesis)
 scripts/eval_italic_fast.py   preferred eval (local HF, fast protocol)
 scripts/eval_italic_full.sh   official eval (vLLM + run_eval.py, both modes)
 scripts/analyze_cot*.py       CoT fast/slow decomposition
@@ -185,13 +267,28 @@ scripts/eval_quick.py         early iteration tracker (superseded by eval_italic
 
 ## Findings & next steps
 
-- **Distillation works but saturates early** (+1.7 full-10k fast by step 250);
-  more steps only lower KL. Early-stop ~250.
-- **opd250 became verbose** (it now reasons even in fast mode, ~700 chars),
-  which slightly hurts fast extraction and inference speed. A cleaner recipe
-  would keep the student terse (`cot_fraction=0`).
-- **Ceiling is the teacher (50.7%).** To go higher: (a) `cot_fraction=0`,
-  terse, early-stopped run to convert more of the knowledge gain cleanly;
-  (b) a stronger teacher (nesso-4B-v2) via cross-tokenizer KL.
-- `dev_acc` during training is a held-out pool slice, never ITALIC data.
+- **What moved the needle, in order:** teacher-correct pool filtering +
+  eval-distribution matching + terse supervision (v3, +1.6 over v2);
+  fast-only training (v2, +0.8 over v1); base on-policy KL (v1, +1.7 over
+  baseline). Total: official fast 33.12 → 37.2.
+- **Don't distill the teacher's errors.** The teacher is right on only 43.7%
+  of the pool; filtering to teacher-correct rows changed the training dynamic
+  (dev accuracy climbs monotonically instead of plateauing at step 250) —
+  and v3 was **still improving at step 550**, so a longer run at the same
+  settings is the cheapest untried gain.
+- **Terse supervision fixes verbosity.** v1/v2 drifted to the token cap and
+  paid a misparse tax in the official harness; v3 trained at
+  `max_new_tokens 8` answers with the bare letter and scores identically
+  under both harnesses — and parses in *both* official modes (slow 33.2 vs
+  literally 0.00 for the baseline).
+- **The remaining structural gap is data, not training:** ITALIC is 40%
+  language capability, our pool has ~990 Italian-language rows (570 after
+  filtering). v3's language score is 33.1 vs 39.7 culture. New Italian
+  grammar/vocabulary sources would move the total more than any knob.
+- Other untried levers: a stronger teacher (nesso-4B-v2) via cross-tokenizer
+  KL; a small gold-answer CE term alongside the KL (the only route past the
+  teacher's 50.7% ceiling).
+- `dev_acc` during training is a held-out pool slice, never ITALIC data
+  (v3's dev is drawn from the teacher-correct pool, so it reads high —
+  in-run signal only, not comparable across runs).
 - Default LR 1e-5 (full fine-tune); tinker's 1e-4 was for LoRA rank 128.
