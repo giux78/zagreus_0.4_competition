@@ -143,6 +143,28 @@ step_250 36.61 → step_350 36.75 → **step_550 37.06** (official: **fast 37.2,
 slow 33.2** — both official modes now parse cleanly). Released as
 [giux78/zagreus_0.4_competition](https://huggingface.co/giux78/zagreus_0.4_competition).
 
+### Training run `opd_v4` (joint fast+CoT — negative result)
+
+Could training *both* modes beat v3 on both? The v3 recipe with
+`cot_fraction 0.3` (30% of prompts use the CoT template, 300-token budget;
+dual dev metric `dev_acc` / `dev_acc_cot`), 600 steps, ~2.3h. The model
+learned real CoT (100+ token reasoning, 94% well-formatted). Official 10k,
+best checkpoints:
+
+| Checkpoint | fast | slow |
+|---|---:|---:|
+| v4 step_350 (CoT dev peak) | 35.6 | 31.4 |
+| v4 step_450 (fast dev peak) | 36.1 | 29.8 |
+| **v3 step_550 (terse-only)** | **37.2** | **33.2** |
+
+**Joint training lost on both modes — including the CoT protocol itself.**
+The terse v3 answers the slow prompt with a short parseable reply and scores
+33.2; the genuinely-reasoning v4 scores ≤31.4. Cleanest confirmation of the
+[CoT analysis](#why-cot-scores-near-zero): on a pure-recall benchmark the
+*act of reasoning* is what costs points (~2–3), and the 30% capacity split
+also taxes fast (~1). Terse-only training strictly dominates here; v3 stays
+the released model for both modes.
+
 ### Why CoT scores near-zero
 
 ITALIC's `slow` (CoT) protocol requires the answer phrased as `Risposta: X`.
@@ -281,6 +303,13 @@ scripts/eval_quick.py         early iteration tracker (superseded by eval_italic
   `max_new_tokens 8` answers with the bare letter and scores identically
   under both harnesses — and parses in *both* official modes (slow 33.2 vs
   literally 0.00 for the baseline).
+- **Do not teach this benchmark's models to reason (opd_v4, negative result).**
+  Joint fast+CoT training (`cot_fraction 0.3`) produced real, well-formatted
+  reasoning — and lost to terse-only v3 on BOTH official modes (fast 36.1 vs
+  37.2, slow 31.4 vs 33.2). On a pure-recall benchmark the act of reasoning
+  itself costs ~2–3 points (the small model argues itself out of correct
+  priors), so a terse model wins even under the CoT protocol. The dev signal
+  showed it early: `dev_acc_cot` plateaued ~11 points below `dev_acc`.
 - **The remaining structural gap is data, not training:** ITALIC is 40%
   language capability, our pool has ~990 Italian-language rows (570 after
   filtering). v3's language score is 33.1 vs 39.7 culture. New Italian
