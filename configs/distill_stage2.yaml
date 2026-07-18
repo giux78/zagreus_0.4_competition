@@ -1,0 +1,65 @@
+# Stage 2 of the pipeline: on-policy distillation of the stage-1 SFT model
+# from nesso-3B, ITALIC-format MCQA (the opd_v3 winning recipe, 900 steps).
+#
+# Student and teacher share the SAME tokenizer (the seed adopted the teacher's,
+# see scripts/build_seed_student.py): the token bridge is the identity — no
+# eos_map (student eos <|eot_id|> lives inside the shared vocab), residual
+# mass is structurally zero.
+
+model:
+  student: /home/ecuser/ai/palingenesis/runs/sft_openita/final
+  teacher: giux78/nesso-3B
+  gradient_checkpointing: true
+
+bridge:
+  extra_stop_tokens: ["<|end_of_text|>"]
+
+data:
+  prompts_path: /home/ecuser/ai/zagreus_competition/data/prompts_v3.jsonl
+  shots_path: /home/ecuser/ai/zagreus_competition/data/5_shots.jsonl
+  dev_size: 500
+  p_reference_shots: 0.8
+  p_pool_shots: 0.1
+  pool_shots_max_k: 5
+  # ITALIC's VERBATIM prompts (benchmark policy lives in the config)
+  system_message: "Sei un assistente utile."
+  fast_template: |-
+    Rispondi alla seguente domanda a scelta multipla sull'argomento '{topic}'. La tua risposta deve essere nel seguente formato: 'LETTERA' (senza virgolette) dove LETTERA è una tra {merged_letters}. Scrivi solo la lettera corrispondente alla tua risposta senza spiegazioni.
+
+    {question}
+
+    {options}
+
+    Risposta:
+  cot_template: |-
+    Rispondi alla seguente domanda a scelta multipla sull'argomento '{topic}'. L'ultima riga della tua risposta deve essere nel seguente formato: 'Risposta: LETTERA' (senza virgolette) dove LETTERA è una tra {merged_letters}. Ragiona brevemente prima di rispondere.
+
+    {question}
+
+    {options}
+
+sampling:
+  batch_prompts: 32
+  group_size: 1
+  temperature: 1.0
+  max_new_tokens: 8      # terse supervision (the opd_v3/v4 lesson)
+  cot_fraction: 0.0
+  gen_micro_seqs: 64
+
+train:
+  output_dir: /home/ecuser/ai/palingenesis/runs/opd_v5
+  steps: 900             # v3 was still rising at 550; budget allows more
+  learning_rate: 1.0e-5
+  warmup_steps: 50
+  lr_scheduler: cosine
+  max_grad_norm: 1.0
+  loss_fn: full_kl
+  seed: 0
+  score_micro_seqs: 8
+  eval_every: 75
+  eval_dev_samples: 200
+  save_steps: 75
+  keep_checkpoints: 0    # keep all; prune after selection
+
+logging:
+  log_every: 10

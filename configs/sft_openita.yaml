@@ -1,0 +1,46 @@
+# Stage 1 of the two-stage pipeline: SFT zagreus-0.4B-ita (+ nesso-3B chat
+# template, see scripts/build_seed_student.py) on a selection of
+# DeepMount00/OpenItalianData, via palingenesis. Stage 2 (on-policy
+# distillation from nesso-3B) continues from the resulting checkpoint.
+#
+#   torchrun --standalone --nproc_per_node=1 -m palingenesis.train \
+#     --config ~/ai/zagreus_competition/configs/sft_openita.yaml
+
+model:
+  name_or_path: /home/ecuser/ai/zagreus_competition/models/zagreus-0.4B-seed
+  torch_dtype: bfloat16
+  attn_implementation: sdpa
+  use_liger_kernel: true
+  compile: false             # 0.4B is fast enough; skip warmup risk on a timed run
+
+data:
+  dataset: /home/ecuser/ai/zagreus_competition/data/openita_selected.jsonl
+  dataset_split: train
+  streaming: false
+  messages_field: conversation
+  max_seq_length: 2048       # instruction data is short; packing fills the rest
+  packing: true
+  num_workers: 4
+
+train:
+  output_dir: /home/ecuser/ai/palingenesis/runs/sft_openita
+  epochs: 1
+  per_device_batch_size: 16
+  gradient_accumulation_steps: 4   # effective ~131k tokens/step at 2048
+  learning_rate: 1.0e-3            # zagreus-family expertise: high LR for SFT
+  weight_decay: 0.1
+  warmup_ratio: 0.03
+  lr_scheduler: cosine
+  optimizer: adamw
+  gradient_checkpointing: none     # 0.4B: activations fit, keep the speed
+  max_grad_norm: 1.0
+  save_steps: 500
+  logging_steps: 10
+  bf16: true
+  seed: 0
+
+memory:
+  chunked_loss: true               # 128k vocab: never materialize [B,S,V]
+
+logging:
+  use_wandb: false
