@@ -11,8 +11,9 @@ library code lives in **[mii-llm/palingenesis](https://github.com/mii-llm/paling
 (branch `odp`, `pgs distill` / `pgs distill-score`) and this repo is the
 experiment record: data policy scripts, eval harnesses, analyses, results.
 
-**Best model released: [giux78/zagreus_0.4_competition](https://huggingface.co/giux78/zagreus_0.4_competition)**
-(= `opd_v3/step_550` below).
+**Models released:**
+- [giux78/zagreus_0.4_competition](https://huggingface.co/giux78/zagreus_0.4_competition) — best overall (= `opd_v3/step_550` below, official fast 37.2)
+- [giux78/zagreus-competition-italic-sft-opd](https://huggingface.co/giux78/zagreus-competition-italic-sft-opd) — the from-scratch pipeline line (= `pipeline v5` below, official fast 34.1 starting from the raw base in under 7 GPU-hours)
 
 ## TL;DR results
 
@@ -27,6 +28,7 @@ protocol that matters); slow = CoT. Two cross-validated harnesses: *informal* =
 | `opd-v1/step_250` (v1 prototype, this repo) | 34.60 | 34.37 | 30.49 |
 | `opd_v2/step_250` (palingenesis, unfiltered pool) | 35.44 | — | — |
 | **`opd_v3/step_550` (palingenesis, filtered pool — released)** | **37.06** | **37.2** | **33.2** |
+| `pipeline v5` (raw zagreus base → SFT → OPD, released) | 34.29 | 34.1 | 0.4\* |
 | `nesso-3B` (teacher, the ceiling) | 50.71 | 50.69 | 2.51\* |
 
 \* The near-zero slow scores are a **scoring artifact**, not a reasoning
@@ -164,6 +166,37 @@ The terse v3 answers the slow prompt with a short parseable reply and scores
 *act of reasoning* is what costs points (~2–3), and the 30% capacity split
 also taxes fast (~1). Terse-only training strictly dominates here; v3 stays
 the released model for both modes.
+
+### Pipeline v5 — from the raw base: SFT → OPD in a 10-hour budget
+
+A different question: how far does the *full pipeline* get starting from
+**mii-llm/zagreus-0.4B-ita** (no instruction tuning, no chat template),
+entirely through palingenesis? Two stages (`scripts/run_pipeline_v5.sh`):
+
+1. **Seed** (`scripts/build_seed_student.py`): base weights + the teacher's
+   tokenizer/chat template (Llama-3, eos `<|eot_id|>`) — student and teacher
+   become tokenizer-identical, so the OPD bridge is the identity.
+2. **SFT** (`configs/sft_openita.yaml`, 4h35m): one epoch over a 1.3M-row
+   selection of DeepMount00/OpenItalianData (`scripts/select_openita.py`),
+   lr 1e-3 (zagreus-family recipe — grad norms stayed at 0.15–0.5 the whole
+   run), packing, ~25k tok/s.
+3. **OPD** (`configs/distill_stage2.yaml`, 2×900 steps ≈ 2h): the opd_v3
+   recipe against nesso-3B.
+
+Full-10k trajectory (informal): SFT-only **13.1** (below chance — general
+instruction SFT teaches *zero* MCQA) → +900 OPD steps **32.2** → +900 more
+**34.3** at step 675 (official: **34.1**, saturated). Total 6h35m of the 10h
+budget. Released as
+[giux78/zagreus-competition-italic-sft-opd](https://huggingface.co/giux78/zagreus-competition-italic-sft-opd).
+
+Takeaways: **OPD did virtually all the benchmark work** (+19 points in ~1
+GPU-hour vs. +13-over-nothing from 4.6 GPU-hours of SFT — though the SFT
+chat foundation is what makes distillation land); the pipeline **beats
+nesso-0.4B-agentic (+1.4)** from a raw base; the remaining ~3-point gap to
+v3 is nesso's training history. Ops lessons: dev-accuracy scales are NOT
+comparable across model lines (0.57 dev = 37.2 official for v3 but 34.1
+here), and packing + epochs-based LR horizons under-decay (palingenesis now
+warns; set `train.max_steps`).
 
 ### Why CoT scores near-zero
 
