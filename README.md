@@ -14,6 +14,8 @@ experiment record: data policy scripts, eval harnesses, analyses, results.
 **Models released:**
 - [giux78/zagreus_0.4_competition](https://huggingface.co/giux78/zagreus_0.4_competition) — best overall (= `opd_v3/step_550` below, official fast 37.2)
 - [giux78/zagreus-competition-italic-sft-opd](https://huggingface.co/giux78/zagreus-competition-italic-sft-opd) — the from-scratch pipeline line (= `pipeline v5` below, official fast 34.1 starting from the raw base in under 7 GPU-hours)
+- [giux78/zagreus_0.4_competition-decontaminated](https://huggingface.co/giux78/zagreus_0.4_competition-decontaminated) — the flagship retrained on an ITALIC-decontaminated pool (informal fast 36.8; proves the 37.2 is real — see [Decontamination](#decontamination-italic--pinocchio))
+- [giux78/zagreus-competition-italic-sft-opd-decontaminated](https://huggingface.co/giux78/zagreus-competition-italic-sft-opd-decontaminated) — the from-scratch line, decontaminated pool (informal fast 34.2)
 
 ## TL;DR results
 
@@ -28,7 +30,9 @@ protocol that matters); slow = CoT. Two cross-validated harnesses: *informal* =
 | `opd-v1/step_250` (v1 prototype, this repo) | 34.60 | 34.37 | 30.49 |
 | `opd_v2/step_250` (palingenesis, unfiltered pool) | 35.44 | — | — |
 | **`opd_v3/step_550` (palingenesis, filtered pool — released)** | **37.06** | **37.2** | **33.2** |
+| `opd_clean1/final` (v3 recipe, decontaminated pool — released) | 36.77 | — | — |
 | `pipeline v5` (raw zagreus base → SFT → OPD, released) | 34.29 | 34.1 | 0.4\* |
+| `pipeline v5 clean` (from-scratch, decontaminated pool — released) | 34.18 | — | — |
 | `nesso-3B` (teacher, the ceiling) | 50.71 | 50.69 | 2.51\* |
 
 \* The near-zero slow scores are a **scoring artifact**, not a reasoning
@@ -38,6 +42,14 @@ collapse — see [Why CoT scores near-zero](#why-cot-scores-near-zero).
 ~25% (mostly 4-option). The teacher sits at 50.7%, so ~13.5 points of headroom
 remain. Per-domain (v3, informal): culture & commonsense 39.7, language
 capability 33.1.
+
+**Decontamination check:** ITALIC is derived from pinocchio, and our
+exact-hash dedup missed reworded duplicates. Retrained on a pool with every
+ITALIC near-duplicate removed (semantic ≥ 0.80), both lines reproduce their
+scores within noise — flagship 37.06 → 36.77, from-scratch 34.29 → 34.18. The
+released numbers are real; contamination inflated them by ~0.1–0.4 points. Full
+method and proof: [Decontamination](#decontamination-italic--pinocchio) /
+[docs/DECONTAMINATION.md](docs/DECONTAMINATION.md).
 
 ## Method
 
