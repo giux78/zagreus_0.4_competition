@@ -1,21 +1,52 @@
-# zagreus_competition — on-policy distillation for ITALIC
+# zagreus_competition — on-policy distillation experiments for ITALIC
 
-Improve **nesso-0.4B-agentic** (built on zagreus-0.4-ita) on the
-[ITALIC](https://github.com/Crisp-Unimib/ITALIC) benchmark by on-policy
-distillation from **Coloss/nesso-3B**, following the logic of
+How far can a **0.4B** Italian model be pushed on the
+[ITALIC](https://github.com/Crisp-Unimib/ITALIC) benchmark by **on-policy
+distillation** from a 3B teacher? This repo is the full experiment record of
+that question — from a self-contained prototype to a released model that lifts
+the student **+4.1 points (33.1 → 37.2 official)**, roughly a quarter of the
+way to the teacher's ceiling.
+
+On-policy distillation (OPD): every step the student samples completions with
+its *current* weights and the teacher scores exactly those tokens (reverse KL) —
+so the student is corrected where it actually goes, no train/inference mismatch.
+Following the logic of
 [tinker-cookbook's on_policy_distillation](https://github.com/thinking-machines-lab/tinker-cookbook/blob/main/tinker_cookbook/recipes/distillation/on_policy_distillation.py)
-but fully self-contained (PyTorch + transformers, no Tinker API).
+but self-contained (PyTorch + transformers, no Tinker API).
 
-The `opd/` package in this repo was the v1 prototype; from v2 on, the
-library code lives in **[mii-llm/palingenesis](https://github.com/mii-llm/palingenesis)**
-(branch `odp`, `pgs distill` / `pgs distill-score`) and this repo is the
-experiment record: data policy scripts, eval harnesses, analyses, results.
+**Two repos, one project.** The `opd/` package here was the v1 prototype; from
+v2 on the library lives in
+**[mii-llm/palingenesis](https://github.com/mii-llm/palingenesis)** (branch
+`odp`, `pgs distill` / `pgs distill-score`) as a general, task-agnostic OPD
+engine. This repo keeps the *policy*: data curation, eval harnesses, analyses,
+and the results below.
+
+### What we learned
+
+- **OPD works, but data quality dominates.** The +4.1 came almost entirely from
+  *how the pool was built*, not from more steps: teacher-correct filtering
+  (don't distill the teacher's errors), terse supervision (`max_new_tokens 8`),
+  and matching the benchmark's exact shot distribution each added ~1 point;
+  the base on-policy KL added the first ~1.7. Gains saturate by ~250 steps.
+- **On this benchmark, reasoning *hurts* — a clean negative result.** Training
+  the student to produce chain-of-thought (`opd_v4`) lost to terse-only on
+  *both* modes, including the CoT protocol itself: ITALIC is pure recall, and a
+  0.4B model reasons itself out of correct first instincts. ([details](#training-run-opd_v4-joint-fastcot--negative-result))
+- **A full pipeline from the raw base is viable in <7 GPU-hours.** SFT on Italian
+  instruction data → OPD takes a *pre-trained-only* `zagreus-0.4B` to official
+  34.1; SFT alone scores 13% (below chance), so OPD does essentially all the
+  benchmark work. ([details](#pipeline-v5--from-the-raw-base-sft--opd-in-a-10-hour-budget))
+- **The results are real — we audited the contamination.** ITALIC is derived
+  from pinocchio; our exact-hash dedup missed *reworded* duplicates. A
+  semantic + option matcher found them, and retraining on a fully decontaminated
+  pool reproduces every score within **~0.3 points** on both lines.
+  ([details](#decontamination-italic--pinocchio))
 
 **Models released:**
-- [giux78/zagreus_0.4_competition](https://huggingface.co/giux78/zagreus_0.4_competition) — best overall (= `opd_v3/step_550` below, official fast 37.2)
-- [giux78/zagreus-competition-italic-sft-opd](https://huggingface.co/giux78/zagreus-competition-italic-sft-opd) — the from-scratch pipeline line (= `pipeline v5` below, official fast 34.1 starting from the raw base in under 7 GPU-hours)
-- [giux78/zagreus_0.4_competition-decontaminated](https://huggingface.co/giux78/zagreus_0.4_competition-decontaminated) — the flagship retrained on an ITALIC-decontaminated pool (informal fast 36.8; proves the 37.2 is real — see [Decontamination](#decontamination-italic--pinocchio))
-- [giux78/zagreus-competition-italic-sft-opd-decontaminated](https://huggingface.co/giux78/zagreus-competition-italic-sft-opd-decontaminated) — the from-scratch line, decontaminated pool (informal fast 34.2)
+- [giux78/zagreus_0.4_competition](https://huggingface.co/giux78/zagreus_0.4_competition) — **best overall** (= `opd_v3/step_550`, official fast **37.2**)
+- [giux78/zagreus-competition-italic-sft-opd](https://huggingface.co/giux78/zagreus-competition-italic-sft-opd) — from-scratch pipeline (= `pipeline v5`, official fast **34.1**, raw base in <7 GPU-hours)
+- [giux78/zagreus_0.4_competition-decontaminated](https://huggingface.co/giux78/zagreus_0.4_competition-decontaminated) — flagship, ITALIC-decontaminated pool (official fast **36.9**; proves 37.2 is real)
+- [giux78/zagreus-competition-italic-sft-opd-decontaminated](https://huggingface.co/giux78/zagreus-competition-italic-sft-opd-decontaminated) — from-scratch line, decontaminated pool (official fast **33.8**)
 
 ## TL;DR results
 
