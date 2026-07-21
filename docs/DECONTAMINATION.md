@@ -68,9 +68,7 @@ pinocchio neighbor — this is what tells you "present but below threshold" vs
 
 `decontaminate_pool.py` runs the reverse direction: for every **pool** row,
 compute its max cosine similarity to *any* ITALIC question and drop it if
-≥ threshold. The cost is asymmetric — over-removing wastes cheap data,
-under-removing leaks the test set — so we drop on the semantic signal alone at
-a conservative **0.80**:
+≥ threshold.
 
 ```bash
 python scripts/decontaminate_pool.py \
@@ -78,6 +76,35 @@ python scripts/decontaminate_pool.py \
     --italic ~/ai/ITALIC/italic.jsonl --threshold 0.80 \
     --out data/clean_pool_raw.jsonl
 ```
+
+### The threshold choice, made explicit
+
+**We deliberately drop on the semantic signal alone at a conservative 0.80** —
+no option/content gate here, unlike the *matching* method above. The reason is
+that the two directions have different jobs: matching *reports* the overlap and
+must be precise (so it uses the content gate to avoid false positives), whereas
+decontamination *protects the eval* and must favor recall. The cost is
+asymmetric — over-removing wastes cheap data (we start from 128 k rows and can
+spare thousands), under-removing leaks the test set into training. So we
+intentionally over-remove: 0.80 sweeps not just the verbatim/reworded
+duplicates but also the borderline 0.80–0.85 template siblings, on purpose.
+
+Applied to the combined pool (pinocchio-text + the two MMLU sources,
+127,928 rows), this **drops 9,127 rows (7.1 %)**, leaving **118,801 clean**:
+
+| max similarity to any ITALIC question | rows dropped | why dropped |
+|---|---:|---|
+| ≥ 0.95 (near-verbatim) | 1,901 | the test question itself |
+| 0.90–0.95 | 906 | clear duplicate |
+| 0.85–0.90 | 1,981 | reworded duplicate |
+| 0.80–0.85 (borderline) | 4,339 | template siblings — swept to stay safe |
+| **total** | **9,127** | |
+
+Note this is a count of **pool rows**, not of ITALIC questions matched
+(~1,545): pinocchio holds several near-duplicate rows per question, and the
+aggressive 0.80 cut removes the template margin too. That is the intended
+behavior — a training pool that is *provably* clean at 0.80 semantic distance,
+at the cost of ~4 k extra rows we did not strictly need to drop.
 
 ## Results
 
@@ -114,15 +141,21 @@ reservoir-sampled and exact-hash-deduped. Matching that pool against ITALIC:
 We rebuilt a fully clean pool — pinocchio-text + the two MMLU sources,
 decontaminated at sem ≥ 0.80 (**9,127 rows dropped**, → 118,801 clean; then
 teacher-correct filtered + Italian-language ×4 → 55,088-row training pool) —
-and re-ran both pipelines with the identical recipe:
+and re-ran both pipelines with the identical recipe. Full 10k, official
+harness (fast is the submission protocol; informal in parentheses):
 
-| line | contaminated pool | clean pool | inflation |
+| line | contaminated | clean (released) | inflation |
 |---|---:|---:|---:|
-| OPD from `nesso-0.4B-agentic` (v3 recipe, 600 steps) | 37.2 official / 37.06 informal | **36.8** | **~0.4** |
-| SFT → OPD from `zagreus-0.4B` seed (900 OPD steps) | 32.2 | **31.7** | **~0.5** |
+| flagship — OPD from `nesso-0.4B-agentic` (v3 recipe) | **37.2** (37.06) | **36.9** (36.77) | **0.3** |
+| from-scratch — SFT → OPD (1,800 OPD steps) | **34.1** (34.29) | **33.8** (34.18) | **0.3** |
+
+Released clean models:
+[zagreus_0.4_competition-decontaminated](https://huggingface.co/giux78/zagreus_0.4_competition-decontaminated)
+and
+[zagreus-competition-italic-sft-opd-decontaminated](https://huggingface.co/giux78/zagreus-competition-italic-sft-opd-decontaminated).
 
 Both independent lines agree: removing every ITALIC near-duplicate costs only
-**~0.4–0.5 points**. The reworded leakage exact-hash missed inflated the
+**~0.3 points official** (≤0.4 informal). The reworded leakage exact-hash missed inflated the
 headline by well under a point. **The released results are real.**
 
 ## Reproduction (A100 box)

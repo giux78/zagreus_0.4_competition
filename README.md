@@ -30,9 +30,9 @@ protocol that matters); slow = CoT. Two cross-validated harnesses: *informal* =
 | `opd-v1/step_250` (v1 prototype, this repo) | 34.60 | 34.37 | 30.49 |
 | `opd_v2/step_250` (palingenesis, unfiltered pool) | 35.44 | — | — |
 | **`opd_v3/step_550` (palingenesis, filtered pool — released)** | **37.06** | **37.2** | **33.2** |
-| `opd_clean1/final` (v3 recipe, decontaminated pool — released) | 36.77 | — | — |
+| `opd_clean1/final` (v3 recipe, decontaminated pool — released) | 36.77 | 36.9 | 30.3 |
 | `pipeline v5` (raw zagreus base → SFT → OPD, released) | 34.29 | 34.1 | 0.4\* |
-| `pipeline v5 clean` (from-scratch, decontaminated pool — released) | 34.18 | — | — |
+| `pipeline v5 clean` (from-scratch, decontaminated pool — released) | 34.18 | 33.8 | 0.3\* |
 | `nesso-3B` (teacher, the ceiling) | 50.71 | 50.69 | 2.51\* |
 
 \* The near-zero slow scores are a **scoring artifact**, not a reasoning
@@ -45,10 +45,11 @@ capability 33.1.
 
 **Decontamination check:** ITALIC is derived from pinocchio, and our
 exact-hash dedup missed reworded duplicates. Retrained on a pool with every
-ITALIC near-duplicate removed (semantic ≥ 0.80), both lines reproduce their
-scores within noise — flagship 37.06 → 36.77, from-scratch 34.29 → 34.18. The
-released numbers are real; contamination inflated them by ~0.1–0.4 points. Full
-method and proof: [Decontamination](#decontamination-italic--pinocchio) /
+ITALIC near-duplicate removed (semantic ≥ 0.80, 9,127 rows dropped), both lines
+reproduce their scores within noise — official fast **37.2 → 36.9** (flagship)
+and **34.1 → 33.8** (from-scratch). The released numbers are real; contamination
+inflated them by only ~0.3 points. Full method and proof:
+[Decontamination](#decontamination-italic--pinocchio) /
 [docs/DECONTAMINATION.md](docs/DECONTAMINATION.md).
 
 ## Method
