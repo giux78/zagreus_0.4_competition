@@ -306,6 +306,10 @@ On **LUMI (ROCm)**: same code; install the ROCm torch build first
 (`pip install torch --index-url https://download.pytorch.org/whl/rocm6.2`)
 and set `teacher_device` if you split models across GCDs.
 
+## Decontamination (ITALIC ↔ pinocchio)
+
+ITALIC is derived from pinocchio, and exact-hash dedup misses reworded duplicates. See [docs/DECONTAMINATION.md](docs/DECONTAMINATION.md) for the robust semantic+option matcher and the clean-rerun proof that contamination inflated results by only ~0.4–0.5 points. Scripts: `build_pinocchio_text.py`, `match_italic_semantic.py`, `italic_coverage.py`, `decontaminate_pool.py` (+ `dedup_lsh_check.py`, `match_italic_options.py` showing the methods that fail).
+
 ## Layout
 
 ```
