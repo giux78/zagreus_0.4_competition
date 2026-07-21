@@ -121,9 +121,8 @@ the student's `<|im_end|>` probability mass is merged into the teacher's
 
 ### Training data
 
-Prompt pool built from three sources, **deduped against the ITALIC 10k test
-set** by normalized-question hash (pinocchio-raw is ITALIC's source corpus —
-the dedup removed ~50 real overlaps):
+The original pool (runs v1–v5) was built from three sources, **deduped against
+the ITALIC 10k test set** by normalized-question hash:
 
 - `mii-llm/pinocchio-raw` (raw-splits, streamed + reservoir-sampled per domain)
 - `efederici/MMLU-Pro-ita`
@@ -134,6 +133,14 @@ Final pool: **109,669 prompts**. Only questions are used for supervision
 turns and dev accuracy tracking. Note: some large pinocchio-raw splits are
 xet-backed and refuse HTTP range-streaming (403); they are skipped by default
 (`--xet-fallback` downloads-then-deletes them if you have disk headroom).
+
+> **Correction (established later, see [Decontamination](#decontamination-italic--pinocchio)):**
+> ITALIC's actual source corpus is **`efederici/pinocchio` (config `text`,
+> 102,573 rows)** — *not* `mii-llm/pinocchio-raw`, which is a different/partial
+> dump. And normalized-hash dedup only catches *identical* questions: it reported
+> ~50 overlaps but **missed the reworded duplicates**. The clean reruns and the
+> released decontaminated models use `efederici/pinocchio` with a
+> semantic-similarity matcher instead.
 
 ## Results in detail
 
