@@ -1,11 +1,12 @@
 # zagreus_competition — on-policy distillation experiments for ITALIC
 
-How far can a **0.4B** Italian model be pushed on the
-[ITALIC](https://github.com/Crisp-Unimib/ITALIC) benchmark by **on-policy
-distillation** from a 3B teacher? This repo is the full experiment record of
-that question — from a self-contained prototype to a released model that lifts
-the student **+4.1 points (33.1 → 37.2 official)**, roughly a quarter of the
-way to the teacher's ceiling.
+Experiment record for pushing a **0.4B** Italian model on the
+[ITALIC](https://github.com/Crisp-Unimib/ITALIC) benchmark via **on-policy
+distillation** from a 3B teacher. Across the runs below, the student gains
+**+4.1 points (33.1 → 37.2 official)** — about a quarter of the way to the
+teacher's ceiling — starting from a self-contained prototype and ending with a
+released model, a from-scratch pipeline, a negative result, and a contamination
+audit.
 
 On-policy distillation (OPD): every step the student samples completions with
 its *current* weights and the teacher scores exactly those tokens (reverse KL) —
